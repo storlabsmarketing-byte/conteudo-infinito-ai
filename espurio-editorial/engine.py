@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 import urllib.request
+import urllib.error
 import xml.etree.ElementTree as ET
 
 API = "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -34,7 +35,7 @@ def request_json(url, body=None, headers=None):
 
 def generate(prompt, search=False, structured=False):
     key = os.environ["GEMINI_API_KEY"]
-    model = os.environ["GEMINI_MODEL"]
+    model = os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
     if not re.fullmatch(r"[a-zA-Z0-9._-]+", model):
         raise ValueError("Invalid model")
     body = {"contents":[{"role":"user","parts":[{"text":prompt}]}],
@@ -106,6 +107,15 @@ def validate(package, recent):
 def main():
     out=pathlib.Path(os.environ.get("OUTPUT_DIR","editorial-output"))
     if out.exists() and any(out.iterdir()):raise ValueError("Output must be empty")
+    mode=os.environ.get("ESPURIO_MODE","verify")
+    if mode not in ("verify","publish"):raise ValueError("Invalid mode")
+    if mode=="publish":
+        from delivery import state
+        status=state()
+        if not status.get("enabled"):raise ValueError("Site publisher disabled")
+        if status.get("publishedToday"):
+            print("Article already published today; nothing generated.")
+            return
     recent=recent_posts() # fail closed: cannot check duplicates without the live feed
     now=dt.datetime.now(dt.timezone.utc).isoformat()
     research,grounding=generate(
@@ -144,6 +154,7 @@ def main():
     for name,value in [("package.json",package),("research.json",{"text":research,"grounding":grounding}),
                        ("review.json",verdict)]:
         (out/name).write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding="utf-8")
-    print("Editorial package prepared as draft. Images and Site publication not performed.")
+    from delivery import deliver
+    deliver(package,out,mode)
 if __name__=="__main__":
     main()
