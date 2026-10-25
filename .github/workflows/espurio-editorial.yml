@@ -1,39 +1,50 @@
-name: Espurio editorial package
+name: Espurio editorial
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'verify testa o fluxo sem publicar; publish publica se ainda não houver artigo hoje'
+        type: choice
+        options: [verify, publish]
+        default: verify
+  push:
+    branches: [main]
+    paths: ['espurio-editorial/**', '.github/workflows/espurio-editorial.yml']
   schedule:
     - cron: '30 12 * * *'
 permissions:
   contents: read
+  id-token: write
 concurrency:
   group: espurio-editorial
   cancel-in-progress: false
 jobs:
-  prepare:
-    if: vars.ESPURIO_EXTERNAL_ENABLED == 'true'
+  editorial:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate configuration
+      - name: Verify secret configuration
         env:
           GEMINI_API_KEY: ${{ secrets.ESPURIO_GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.ESPURIO_GEMINI_MODEL }}
-        run: |
-          python -c "import os; assert os.environ.get('GEMINI_API_KEY'), 'Configure ESPURIO_GEMINI_API_KEY'; assert os.environ.get('GEMINI_MODEL'), 'Configure ESPURIO_GEMINI_MODEL'"
+        run: python -c "import os; assert os.environ.get('GEMINI_API_KEY'), 'Missing ESPURIO_GEMINI_API_KEY'"
+      - run: python -m pip install 'Pillow==11.3.0'
       - name: Test editorial gates
         run: python -m unittest discover -s espurio-editorial -p test_engine.py
-      - name: Prepare researched article
+      - name: Research, generate, validate and publish
         env:
           GEMINI_API_KEY: ${{ secrets.ESPURIO_GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.ESPURIO_GEMINI_MODEL }}
+          GEMINI_MODEL: ${{ vars.ESPURIO_GEMINI_MODEL || 'gemini-2.5-flash' }}
+          ESPURIO_IMAGE_MODEL: ${{ vars.ESPURIO_IMAGE_MODEL || 'gemini-2.5-flash-image' }}
+          ESPURIO_MODE: ${{ github.event_name == 'schedule' && 'publish' || inputs.mode || 'verify' }}
         run: python espurio-editorial/engine.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: espurio-editorial-${{ github.run_id }}
           path: editorial-output/
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: ignore
