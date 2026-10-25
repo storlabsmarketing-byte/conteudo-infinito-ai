@@ -30,12 +30,35 @@ de um evento real. Nao afirmar envio de emails nem publicacao sem confirmacao.""
 def request_json(url, body=None, headers=None):
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=120) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(req, timeout=120) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        detail=error.read(3000).decode("utf-8",errors="replace")
+        key=os.environ.get("GEMINI_API_KEY","")
+        if key:detail=detail.replace(key,"[redacted]")
+        raise RuntimeError("Provider HTTP "+str(error.code)+": "+detail) from None
+
+
+_AVAILABLE_MODELS = None
+def select_model(requested, image=False):
+    global _AVAILABLE_MODELS
+    if _AVAILABLE_MODELS is None:
+        payload=request_json(API.rstrip("/"),headers={"x-goog-api-key":os.environ["GEMINI_API_KEY"]})
+        _AVAILABLE_MODELS={m["name"].removeprefix("models/") for m in payload.get("models",[])
+                           if "generateContent" in m.get("supportedGenerationMethods",[])}
+    if requested in _AVAILABLE_MODELS:return requested
+    choices=(["gemini-3.1-flash-image-preview","gemini-3-pro-image-preview","gemini-2.5-flash-image"]
+             if image else ["gemini-3.8-flash","gemini-3.6-flash","gemini-3-flash-preview","gemini-2.5-flash"])
+    for candidate in choices:
+        if candidate in _AVAILABLE_MODELS:
+            print("Selected available "+("image" if image else "text")+" model: "+candidate)
+            return candidate
+    raise ValueError("No supported "+("image" if image else "text")+" model available in this Google project")
 
 def generate(prompt, search=False, structured=False):
     key = os.environ["GEMINI_API_KEY"]
-    model = os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+    model = select_model(os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash")
     if not re.fullmatch(r"[a-zA-Z0-9._-]+", model):
         raise ValueError("Invalid model")
     body = {"contents":[{"role":"user","parts":[{"text":prompt}]}],
@@ -116,6 +139,7 @@ def main():
         if status.get("publishedToday"):
             print("Article already published today; nothing generated.")
             return
+    os.environ["ESPURIO_IMAGE_MODEL"]=select_model(os.environ.get("ESPURIO_IMAGE_MODEL"),image=True)
     recent=recent_posts() # fail closed: cannot check duplicates without the live feed
     now=dt.datetime.now(dt.timezone.utc).isoformat()
     research,grounding=generate(
