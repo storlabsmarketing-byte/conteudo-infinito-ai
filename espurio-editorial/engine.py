@@ -47,7 +47,7 @@ def select_model(requested, image=False):
         payload=request_json(API.rstrip("/"),headers={"x-goog-api-key":os.environ["GEMINI_API_KEY"]})
         _AVAILABLE_MODELS={m["name"].removeprefix("models/") for m in payload.get("models",[])
                            if "generateContent" in m.get("supportedGenerationMethods",[])}
-    if requested in _AVAILABLE_MODELS:return requested
+    if requested in _AVAILABLE_MODELS and requested not in ("gemini-2.5-flash","gemini-2.5-flash-image"):return requested
     choices=(["gemini-3.1-flash-image-preview","gemini-3-pro-image-preview","gemini-2.5-flash-image"]
              if image else ["gemini-3.8-flash","gemini-3.6-flash","gemini-3-flash-preview","gemini-2.5-flash"])
     for candidate in choices:
