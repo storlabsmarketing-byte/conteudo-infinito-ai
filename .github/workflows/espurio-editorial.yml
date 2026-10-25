@@ -1,0 +1,39 @@
+name: Espurio editorial package
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 12 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: espurio-editorial
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: vars.ESPURIO_EXTERNAL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate configuration
+        env:
+          GEMINI_API_KEY: ${{ secrets.ESPURIO_GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.ESPURIO_GEMINI_MODEL }}
+        run: |
+          python -c "import os; assert os.environ.get('GEMINI_API_KEY'), 'Configure ESPURIO_GEMINI_API_KEY'; assert os.environ.get('GEMINI_MODEL'), 'Configure ESPURIO_GEMINI_MODEL'"
+      - name: Test editorial gates
+        run: python -m unittest discover -s espurio-editorial -p test_engine.py
+      - name: Prepare researched article
+        env:
+          GEMINI_API_KEY: ${{ secrets.ESPURIO_GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.ESPURIO_GEMINI_MODEL }}
+        run: python espurio-editorial/engine.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: espurio-editorial-${{ github.run_id }}
+          path: editorial-output/
+          retention-days: 14
+          if-no-files-found: error
