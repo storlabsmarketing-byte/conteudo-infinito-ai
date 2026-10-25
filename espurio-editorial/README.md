@@ -1,47 +1,48 @@
-# Espúrio Editorial Externo
+# Motor editorial externo do Espúrio
 
-Estado: implementação de preparação editorial. NÃO é uma substituição ativa da publicação diária.
+Produção em GitHub Actions usando Gemini, pesquisa Google e geração de imagens, sem chamar o ChatGPT ou a API OpenAI.
 
-## O que está implementado
-- Execução fora do ChatGPT, em GitHub Actions, com Python sem dependências externas.
-- Pesquisa atual com Google Search grounding, geração estruturada com Gemini e auditoria separada.
-- Consulta do RSS real para evitar títulos e slugs duplicados. Falha de leitura interrompe execução.
-- Autoria O Espúrio, Investidor Legionário, linha editorial e CTA do projeto.
-- Slug, título SEO, meta descrição, fontes, corpo em blocos compatíveis com o Site e direção de três imagens.
-- Validações e quatro testes automatizados.
-- Saída sempre draft. Nenhuma escrita no site, nenhum envio de email, nenhuma credencial no repositório.
+## Estado e ativação
+O motor e o receptor no Sites estão implementados. O teste integrado com a chave real é obrigatório antes de habilitar a agenda externa e desativar a rotina anterior. O workflow roda em modo verify no push da implementação para main. Verify gera o pacote completo e valida a identidade e o conteúdo no Sites, sem publicar um segundo artigo no mesmo dia.
 
-## Ativação da preparação
-1. Mesclar esta branch após revisão.
-2. Em GitHub Settings / Secrets and variables / Actions, cadastrar o segredo ESPURIO_GEMINI_API_KEY.
-3. Cadastrar a variável ESPURIO_GEMINI_MODEL com um modelo habilitado nessa conta que suporte generateContent e Google Search.
-4. Cadastrar ESPURIO_EXTERNAL_ENABLED=true.
-5. Executar manualmente o workflow e conferir o artefato. Nenhuma chamada paga foi executada durante a implementação.
+## Configuração
+Segredo obrigatório: ESPURIO_GEMINI_API_KEY.
+Variáveis opcionais: ESPURIO_GEMINI_MODEL (default gemini-2.5-flash) e ESPURIO_IMAGE_MODEL (default gemini-2.5-flash-image).
+Modelos, pesquisa, imagens e minutos do Actions têm cotas/custos próprios. Não há promessa de gratuidade.
+A chave nunca entra no código, pacote ou logs. Credenciais temporárias do Sites não são copiadas ao GitHub.
 
-Agendamento preparado: 12:30 UTC, equivalente a 09:30 em Brasília. GitHub Actions pode atrasar execuções, não garante horário exato. A chave do Site não é copiada nem reaproveitada aqui.
-As chamadas Gemini, pesquisa e minutos de Actions dependem das cotas e preços das respectivas contas. Não consomem o plano ChatGPT quando executadas externamente. Não há promessa de gratuidade.
+## Fluxo
+1. Ler estado público e RSS. Se já existe artigo do dia em modo publish, encerrar antes de gerar.
+2. Pesquisar com grounding atual e exigir ao menos duas fontes.
+3. Redigir JSON e auditar as afirmações contra as evidências.
+4. Gerar capa usando o modelo visual aprovado como referência e duas imagens internas novas.
+5. Otimizar JPEGs, incluir alt e legendas, slug e meta descrição.
+6. Obter JWT OIDC temporário do GitHub. O Sites verifica assinatura, audiência, IDs do repositório e proprietário, branch main e caminho do workflow.
+7. Validar o pacote. Em publish, inserir artigo e imagens atomicamente em D1.
+8. Ler página, imagens, CTA, RSS e sitemap. Falha de leitura não declara sucesso; retry encontra o artigo já persistido.
 
-## O que falta para substituir a rotina atual
-- Credencial Gemini cadastrada no GitHub e teste real da geração.
-- Geração/exportação das imagens finais com o modelo aprovado, incluindo moeda original.
-  Os prompts de imagem não substituem arquivos finais.
-- Integração autenticada de importação/publicação no Sites. A hospedagem atual usa um repositório gerenciado,
-  não este GitHub. Um commit aqui não publica o Site.
-- Persistência de publicação por data/slug no destino, teste de retries e leitura da página pública, imagens,
-  CTA, RSS e sitemap.
-- Somente após o fluxo completo ser testado, desativar a automação ChatGPT para evitar publicações duplas.
+## Publicação
+Destino https://oespurio.com.br/api/blog/editorial.
+O receptor só é habilitado com BLOG_EDITORIAL_ENABLED=true no Sites.
+Permite um artigo por data de Brasília, sem substituir posts existentes. Push pode validar, mas não publicar.
+As páginas mantêm tema branco, títulos dourados, texto preto, autoria O Espúrio.
+Os artigos novos entram na listagem e nos metadados, RSS e sitemap sem novo deploy.
+O envio de e-mail depende separadamente do provedor da newsletter.
 
-Não persistir as credenciais curtas do Sites como segredo permanente. Não criar endpoint de escrita público.
-Não ativar publicação baseada apenas na aprovação do modelo. A auditoria reduz erros, não garante veracidade.
-A evidência completa fica no artefato para revisão; dados de clientes e segredos nunca entram no pacote.
+## Execução
+Workflow manual: verify ou publish.
+Agenda preparada: 12:30 UTC, equivalente a 09:30 de Brasília. GitHub Actions pode atrasar; não garante horário exato.
+A agenda será liberada após teste integrado. Não operar duas rotinas de geração simultaneamente.
+Os artefatos incluem pacote, evidências, auditoria, imagens e resultado; são mantidos por 14 dias.
+Não são enviados a redes sociais.
 
-## Testes locais
-python -m unittest discover -s espurio-editorial -p test_engine.py
+## Validação
+Quatro testes Python validam metadados, estado, duplicatas, evidências e CTA.
+No Sites, testes verificam assinatura OIDC, escopos, payload, inserção atômica, rollback e idempotência.
+A auditoria por IA reduz erros, mas não garante veracidade: mantenha acompanhamento editorial e pause o envio se necessário.
 
-## Referências consultadas
-https://docs.github.com/en/actions/how-tos/troubleshoot-workflows
-https://ai.google.dev/gemini-api/docs/generate-content/google-search
+Referências técnicas: https://docs.github.com/en/actions/reference/security/oidc
 https://ai.google.dev/api/generate-content
+https://ai.google.dev/gemini-api/docs/generate-content/google-search
+https://ai.google.dev/gemini-api/docs/generate-content/image-generation
 https://github.com/blader/humanizer
-
-Consulta técnica: 25 de outubro de 2026. Humanizer orienta revisão editorial; não é um modelo de IA nem elimina custos de inferência.
